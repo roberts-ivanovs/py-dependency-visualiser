@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs, io::Write};
 
-use fs::{File};
+use fs::File;
 use structopt::StructOpt;
 use walkdir::{DirEntry, WalkDir};
 
@@ -40,12 +40,13 @@ fn main() {
         let base_path = matches.config.clone();
         let base_path = base_path.to_str().unwrap();
         let realt_path: Vec<&str> = entry.path().to_str().unwrap().split(base_path).collect();
-        let realt_path = name_filter.clone().to_owned()
+        let realt_path = name_filter.clone().replace(".__init__", "").to_owned()
             + realt_path
                 .get(1)
                 .unwrap()
                 .replace(".py", "")
                 .replace("/", ".")
+                .replace(".__init__", "")
                 .as_ref();
         println!("\n{:?} \n{:#?}", realt_path, &content);
         map.insert(realt_path, content);
