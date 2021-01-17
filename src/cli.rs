@@ -15,4 +15,8 @@ pub struct Opt {
         about = "Filepath: Root init folder"
     )]
     pub config: PathBuf,
+
+
+    #[structopt(short, long)]
+    pub name_filter: String,
 }
