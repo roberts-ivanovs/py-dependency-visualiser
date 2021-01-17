@@ -82,7 +82,7 @@ fn sanity_cleanup(line: &str) -> String {
         .nth(0)
         .unwrap()
         .to_string()
-        .split(" as")
+        .split(" as ")
         .nth(0)
         .unwrap()
         .to_string()
@@ -117,7 +117,8 @@ fn extract_import(content: &str) -> Vec<Vec<String>> {
                                     state = LineParsingState::COCNAT;
                                     concat_state = sanity_cleanup(l);
                                 }
-                                false => import_lines.push(sanity_cleanup(l)),
+                                false => {
+                                    import_lines.push(sanity_cleanup(l))},
                             }
                         }
                     }
@@ -127,7 +128,7 @@ fn extract_import(content: &str) -> Vec<Vec<String>> {
             }
             l if l.contains(")") && (state == LineParsingState::COCNAT) => {
                 state = LineParsingState::READ;
-                concat_state += l;
+                concat_state += sanity_cleanup(l).as_ref();
                 import_lines.push(concat_state.to_owned());
                 concat_state = String::new();
             }
