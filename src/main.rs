@@ -28,9 +28,8 @@ fn main() {
         .map(|(dir, content)| {
             (
                 dir,
-                content
-                    .split('\n')
-                    .filter_map(|e| extract_import(&e))
+                extract_import(&content)
+                    .iter()
                     .map(|e| {
                         e.iter()
                             .map(|e| sanity_cleanup(&e))
@@ -100,7 +99,62 @@ fn sanity_cleanup(line: &str) -> String {
         .replace("class", "classs")
 }
 
-fn extract_import(line: &str) -> Option<Vec<String>> {
+#[derive(Debug, PartialEq)]
+enum LineParsingState {
+    READ,
+    COCNAT,
+}
+
+fn extract_import(content: &str) -> Vec<Vec<String>> {
+    let mut state = LineParsingState::READ;
+    let mut concat_state = String::new();
+    let mut import_lines = vec![];
+    for line in content.split("\n") {
+        match line {
+            l if state == LineParsingState::READ => {
+                match l {
+                    l if l.starts_with("from ") && l.contains(" import ") => {
+                        // Handle case `from xsd.asd import (ccc, aaa)`
+                        if l.contains("(") && l.contains(")") {
+                            let l = l.replace("(", "").replace(")", "");
+                            import_lines.push(l);
+                        } else {
+                            match l.contains("(") {
+                                true => {
+                                    state = LineParsingState::COCNAT;
+                                    concat_state = l.to_owned();
+                                }
+                                false => import_lines.push(l.to_owned()),
+                            }
+                        }
+                    }
+                    l if l.starts_with("import ") => import_lines.push(l.to_owned()),
+                    _ => (),
+                }
+            }
+            l if l.contains(")") && (state == LineParsingState::COCNAT) => {
+                state = LineParsingState::READ;
+                concat_state += l;
+                let cleaned_up = concat_state.replace("(", "").replace(")", "");
+                import_lines.push(cleaned_up);
+                concat_state = String::new();
+            }
+            l if (state == LineParsingState::COCNAT) => {
+                concat_state += l;
+            }
+            _ => (),
+        }
+    }
+
+    println!("{:#?}", concat_state);
+
+    import_lines
+        .iter()
+        .filter_map(|e| extract_single_import(e))
+        .collect::<Vec<Vec<String>>>()
+}
+
+fn extract_single_import(line: &str) -> Option<Vec<String>> {
     match line {
         l if l.starts_with("from ") && l.contains(" import ") => {
             let first: Vec<&str> = l.split("from ").nth(1).unwrap().split(" import ").collect();
@@ -114,7 +168,7 @@ fn extract_import(line: &str) -> Option<Vec<String>> {
                     acc
                 })
                 .iter()
-                .map(|e| base.to_string() + "." + e)
+                .map(|e| base.to_string() + "." + e.replace(" ", "").replace(",", "").as_ref())
                 .collect::<Vec<String>>();
             Some(first)
         }
@@ -145,7 +199,7 @@ mod tests {
     #[test]
     fn test_extract_import_single() {
         let line = "import zeep.xsd";
-        let res = extract_import(line).unwrap();
+        let res = extract_single_import(line).unwrap();
         let first = res.get(0).unwrap();
         assert_eq!(1, res.len());
         assert_eq!("zeep.xsd", first);
@@ -154,11 +208,76 @@ mod tests {
     #[test]
     fn test_extract_import_multiple() {
         let line = "from zeep.xsd import asd, dasd";
-        let res = extract_import(line).unwrap();
+        let res = extract_single_import(line).unwrap();
         let first = res.get(0).unwrap();
         let second = res.get(1).unwrap();
         assert_eq!(2, res.len());
         assert_eq!("zeep.xsd.asd", first);
+        assert_eq!("zeep.xsd.dasd", second);
+    }
+
+    #[test]
+    fn test_extract_import_state_machine_f_1() {
+        let line = "from zeep.xsd import asd";
+        let res = extract_import(line);
+        assert_eq!(1, res.len());
+        let res = res.get(0).unwrap();
+        assert_eq!(1, res.len());
+        let first = res.get(0).unwrap();
+        assert_eq!("zeep.xsd.asd", first);
+    }
+
+    #[test]
+    fn test_extract_import_state_machine_f_2() {
+        let line = "import zeep.xsd";
+        let res = extract_import(line);
+        assert_eq!(1, res.len());
+        let res = res.get(0).unwrap();
+        assert_eq!(1, res.len());
+        let first = res.get(0).unwrap();
+        assert_eq!("zeep.xsd", first);
+    }
+
+    #[test]
+    fn test_extract_import_state_machine_f_3() {
+        let line = "from zeep.xsd import asd, dasd";
+        let res = extract_import(line);
+        assert_eq!(1, res.len());
+        let res = res.get(0).unwrap();
+        assert_eq!(2, res.len());
+        let first = res.get(0).unwrap();
+        assert_eq!("zeep.xsd.asd", first);
+        let second = res.get(1).unwrap();
+        assert_eq!("zeep.xsd.dasd", second);
+    }
+
+    #[test]
+    fn test_extract_import_state_machine_f_4() {
+        let line = "from zeep.xsd import (asd, dasd)";
+        let res = extract_import(line);
+        assert_eq!(1, res.len());
+        let res = res.get(0).unwrap();
+        assert_eq!(2, res.len());
+        let first = res.get(0).unwrap();
+        assert_eq!("zeep.xsd.asd", first);
+        let second = res.get(1).unwrap();
+        assert_eq!("zeep.xsd.dasd", second);
+    }
+
+    #[test]
+    fn test_extract_import_state_machine_f_5() {
+        let line = r###"
+from zeep.xsd import (
+    asd,
+    dasd,
+)"###;
+        let res = extract_import(line);
+        assert_eq!(1, res.len());
+        let res = res.get(0).unwrap();
+        assert_eq!(2, res.len());
+        let first = res.get(0).unwrap();
+        assert_eq!("zeep.xsd.asd", first);
+        let second = res.get(1).unwrap();
         assert_eq!("zeep.xsd.dasd", second);
     }
 }
