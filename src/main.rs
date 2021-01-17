@@ -96,7 +96,10 @@ fn sanity_cleanup(line: &str) -> String {
         .nth(0)
         .unwrap()
         .to_string()
-        .replace("class", "classs")
+        .replace("(", "")
+        .replace(".*", "")
+        .replace(")", "") // Init files point to the named module anyway
+        .replace("class", "classs") // Necessary because mermaid does has `class` as keyword
 }
 
 #[derive(Debug, PartialEq)]
@@ -116,15 +119,15 @@ fn extract_import(content: &str) -> Vec<Vec<String>> {
                     l if l.starts_with("from ") && l.contains(" import ") => {
                         // Handle case `from xsd.asd import (ccc, aaa)`
                         if l.contains("(") && l.contains(")") {
-                            let l = l.replace("(", "").replace(")", "");
+                            let l = sanity_cleanup(l);
                             import_lines.push(l);
                         } else {
                             match l.contains("(") {
                                 true => {
                                     state = LineParsingState::COCNAT;
-                                    concat_state = l.to_owned();
+                                    concat_state = sanity_cleanup(l);
                                 }
-                                false => import_lines.push(l.to_owned()),
+                                false => import_lines.push(sanity_cleanup(l)),
                             }
                         }
                     }
@@ -135,12 +138,11 @@ fn extract_import(content: &str) -> Vec<Vec<String>> {
             l if l.contains(")") && (state == LineParsingState::COCNAT) => {
                 state = LineParsingState::READ;
                 concat_state += l;
-                let cleaned_up = concat_state.replace("(", "").replace(")", "");
-                import_lines.push(cleaned_up);
+                import_lines.push(concat_state.to_owned());
                 concat_state = String::new();
             }
             l if (state == LineParsingState::COCNAT) => {
-                concat_state += l;
+                concat_state += sanity_cleanup(l).as_ref();
             }
             _ => (),
         }
@@ -279,5 +281,28 @@ from zeep.xsd import (
         assert_eq!("zeep.xsd.asd", first);
         let second = res.get(1).unwrap();
         assert_eq!("zeep.xsd.dasd", second);
+    }
+
+    #[test]
+    fn test_extract_import_state_machine_f_6() {
+        let line = r###"
+from zeep.loader import (
+    absolute_location,
+    is_relative_path,
+    load_external,
+    load_external_async,
+)"###;
+        let res = extract_import(line);
+        assert_eq!(1, res.len());
+        let res = res.get(0).unwrap();
+        assert_eq!(4, res.len());
+        let item = res.get(0).unwrap();
+        assert_eq!("zeep.loader.absolute_location", item);
+        let item = res.get(1).unwrap();
+        assert_eq!("zeep.loader.is_relative_path", item);
+        let item = res.get(2).unwrap();
+        assert_eq!("zeep.loader.load_external", item);
+        let item = res.get(3).unwrap();
+        assert_eq!("zeep.loader.load_external_async", item);
     }
 }
