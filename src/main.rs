@@ -1,18 +1,13 @@
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, io::Write};
 
 #[macro_use]
 extern crate lazy_static;
 
-use fs::FileType;
-use regex::Regex;
+use fs::{File, FileType};
 use structopt::StructOpt;
 use walkdir::{DirEntry, WalkDir};
 
 mod cli;
-
-lazy_static! {
-    static ref SINGLE_IMPORT: Regex = Regex::new("").unwrap();
-}
 
 fn main() {
     let matches = cli::Opt::from_args();
@@ -38,30 +33,71 @@ fn main() {
                     .filter_map(|e| extract_import(&e))
                     .map(|e| {
                         e.iter()
-                            .map(|e| remove_comments(&e))
+                            .map(|e| sanity_cleanup(&e))
                             .filter(|e| e.starts_with(&name_filter))
                             .collect::<Vec<String>>()
                     })
                     .filter(|e| e.len() > 0)
-                    .collect::<Vec<Vec<String>>>(),
+                    .fold(vec![], |mut acc, it| {
+                        acc.extend(it);
+                        acc
+                    }),
             )
         })
-        .collect::<Vec<(DirEntry, Vec<Vec<String>>)>>();
+        .filter(|(_, content)| content.len() > 0)
+        .collect::<Vec<(DirEntry, Vec<String>)>>();
     for (entry, content) in imports_per_dir {
-        // TODO insert into the hashmap
-        println!("\n{:?} \n{:#?}", &entry, &content);
-        // map.insert(entry.path().to_str().unwrap().to_owned(), content);
+        let base_path = matches.config.clone();
+        let base_path = base_path.to_str().unwrap();
+        let realt_path: Vec<&str> = entry.path().to_str().unwrap().split(base_path).collect();
+        let realt_path = name_filter.clone().to_owned()
+            + realt_path
+                .get(1)
+                .unwrap()
+                .replace(".py", "")
+                .replace("/", ".")
+                .as_ref();
+        println!("\n{:?} \n{:#?}", realt_path, &content);
+        map.insert(realt_path, content);
     }
-
-    // TODO Strip common path for shorter filenames
-    // let base_path = matches.config.clone();
-    // let base_path = base_path.to_str().unwrap();
-    // let realt_path: Vec<&str> = entry.path().to_str().unwrap().split(base_path).collect();
-    // let realt_path = realt_path.get(1).unwrap();
+    write_mermaid(&map);
 }
 
-fn remove_comments(line: &str) -> String {
-    line.split("#").nth(0).unwrap().to_string()
+fn write_mermaid(map: &HashMap<String, Vec<String>>) {
+    let mut file = File::create("output.md").unwrap();
+    file.write(
+        br###"
+```mermaid
+graph RL
+"###,
+    )
+    .unwrap();
+    for (key, val) in map.iter() {
+        let items = val
+            .iter()
+            .map(|e| e.to_owned() + " --> " + key.clone().as_ref())
+            .collect::<Vec<String>>();
+        let items = items.join("\n") + "\n";
+        file.write(items.as_bytes()).unwrap();
+    }
+    file.write(
+        br###"
+```
+"###,
+    )
+    .unwrap();
+}
+
+fn sanity_cleanup(line: &str) -> String {
+    line.split("#")
+        .nth(0)
+        .unwrap()
+        .to_string()
+        .split(" as")
+        .nth(0)
+        .unwrap()
+        .to_string()
+        .replace("class", "classs")
 }
 
 fn extract_import(line: &str) -> Option<Vec<String>> {
