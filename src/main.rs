@@ -1,9 +1,6 @@
 use std::{collections::HashMap, fs, io::Write};
 
-#[macro_use]
-extern crate lazy_static;
-
-use fs::{File, FileType};
+use fs::{File};
 use structopt::StructOpt;
 use walkdir::{DirEntry, WalkDir};
 
@@ -13,12 +10,6 @@ fn main() {
     let matches = cli::Opt::from_args();
     let name_filter = matches.name_filter;
     let mut map: HashMap<String, Vec<String>> = HashMap::new();
-    // TODO: Fix paring of imports like:
-    //  ```
-    // from xsd.asd import (
-    //                      first,
-    //                      second,
-    //                    )
     let imports_per_dir = WalkDir::new(matches.config.clone())
         .into_iter()
         .filter_map(|e| e.ok())

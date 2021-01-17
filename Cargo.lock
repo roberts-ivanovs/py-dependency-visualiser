@@ -63,7 +63,6 @@ dependencies = [
 name = "import_visualiser"
 version = "0.1.0"
 dependencies = [
- "lazy_static",
  "structopt",
  "walkdir",
 ]
