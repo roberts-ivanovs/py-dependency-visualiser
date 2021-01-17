@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, io::Write};
+use std::{fs, io::Write};
 
 use fs::File;
 use structopt::StructOpt;
@@ -9,7 +9,8 @@ mod cli;
 fn main() {
     let matches = cli::Opt::from_args();
     let name_filter = matches.name_filter;
-    let mut map: HashMap<String, Vec<String>> = HashMap::new();
+    let base_path = matches.config.clone();
+    let base_path = base_path.to_str().unwrap();
     let imports_per_dir = WalkDir::new(matches.config.clone())
         .into_iter()
         .filter_map(|e| e.ok())
@@ -35,26 +36,23 @@ fn main() {
             )
         })
         .filter(|(_, content)| content.len() > 0)
-        .collect::<Vec<(DirEntry, Vec<String>)>>();
-    for (entry, content) in imports_per_dir {
-        let base_path = matches.config.clone();
-        let base_path = base_path.to_str().unwrap();
-        let realt_path: Vec<&str> = entry.path().to_str().unwrap().split(base_path).collect();
-        let realt_path = name_filter.clone().replace(".__init__", "").to_owned()
-            + realt_path
-                .get(1)
-                .unwrap()
-                .replace(".py", "")
-                .replace("/", ".")
-                .replace(".__init__", "")
-                .as_ref();
-        println!("\n{:?} \n{:#?}", realt_path, &content);
-        map.insert(realt_path, content);
-    }
-    write_mermaid(&map);
+        .map(|(entry, content)| {
+            let realt_path: Vec<&str> = entry.path().to_str().unwrap().split(base_path).collect();
+            let realt_path = name_filter.clone().replace(".__init__", "").to_owned()
+                + realt_path
+                    .get(1)
+                    .unwrap()
+                    .replace(".py", "")
+                    .replace("/", ".")
+                    .replace(".__init__", "")
+                    .as_ref();
+            (realt_path, content)
+        })
+        .collect::<Vec<(String, Vec<String>)>>();
+    write_mermaid(&imports_per_dir);
 }
 
-fn write_mermaid(map: &HashMap<String, Vec<String>>) {
+fn write_mermaid(map: &Vec<(String, Vec<String>)>) {
     let mut file = File::create("output.md").unwrap();
     file.write(
         br###"
@@ -139,9 +137,6 @@ fn extract_import(content: &str) -> Vec<Vec<String>> {
             _ => (),
         }
     }
-
-    println!("{:#?}", concat_state);
-
     import_lines
         .iter()
         .filter_map(|e| extract_single_import(e))
